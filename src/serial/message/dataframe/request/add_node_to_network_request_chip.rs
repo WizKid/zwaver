@@ -17,12 +17,28 @@ pub enum Status {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub struct ProtocolDoneData {
+    pub node_id: u8,
+}
+
+impl ProtocolDoneData {
+    pub fn encode(&self, dst: &mut BytesMut) {
+        dst.put_u8(self.node_id);
+    }
+
+    pub fn decode(src: &mut Bytes) -> ProtocolDoneData {
+        let node_id = src.get_u8();
+        ProtocolDoneData { node_id }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum AddNodeToNetworkRequestChip {
     LearnReady,
     NodeFound,
     AddingController,
     AddingSlave,
-    ProtocolDone,
+    ProtocolDone(ProtocolDoneData),
     Done,
     Failed,
 }
@@ -43,8 +59,9 @@ impl AddNodeToNetworkRequestChip {
             AddNodeToNetworkRequestChip::AddingSlave => {
                 dst.put_u8(Status::AddingSlave.into());
             },
-            AddNodeToNetworkRequestChip::ProtocolDone => {
+            AddNodeToNetworkRequestChip::ProtocolDone( data ) => {
                 dst.put_u8(Status::ProtocolDone.into());
+                data.encode(dst);
             },
             AddNodeToNetworkRequestChip::Done => {
                 dst.put_u8(Status::Done.into());
@@ -63,7 +80,7 @@ impl AddNodeToNetworkRequestChip {
             Status::NodeFound => AddNodeToNetworkRequestChip::NodeFound,
             Status::AddingController => AddNodeToNetworkRequestChip::AddingController,
             Status::AddingSlave => AddNodeToNetworkRequestChip::AddingSlave,
-            Status::ProtocolDone => AddNodeToNetworkRequestChip::ProtocolDone,
+            Status::ProtocolDone => AddNodeToNetworkRequestChip::ProtocolDone(ProtocolDoneData::decode(src)),
             Status::Done => AddNodeToNetworkRequestChip::Done,
             Status::Failed => AddNodeToNetworkRequestChip::Failed,
         }

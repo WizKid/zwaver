@@ -22,7 +22,7 @@ impl Codec {
         return checksum;
     }
 
-    fn decode_dataframe(src: &Bytes, is_host: bool) -> dataframe::DataFrame {
+    pub fn decode_dataframe(src: &Bytes, is_host: bool) -> dataframe::DataFrame {
         println!("decode_dataframe: {:?}", src);
         return match FromPrimitive::from_u8(src[0]) {
             Some(dataframe::Type::Request) => {

@@ -1,4 +1,4 @@
-use super::super::super::super::super::command_class::CommandClass;
+use crate::command_class::CommandClass;
 
 use bytes::{ Bytes, Buf, BytesMut, BufMut };
 

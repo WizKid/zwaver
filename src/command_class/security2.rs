@@ -105,22 +105,88 @@ impl PublicKeyReportData {
     }
 }
 
+#[derive(FromPrimitive, IntoPrimitive, Debug, PartialEq, Copy, Clone)]
+#[repr(u8)]
+pub enum MessageEncapsulationExtensionType {
+    Span = 0x1,
+    Mpan = 0x2,
+    Mgrp = 0x3,
+    Mos = 0x4,
+}
+
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct MessageEncapsulationExtensionData {
+    pub more : bool,
+    pub critical : bool,
+    pub type_: MessageEncapsulationExtensionType,
+    pub bytes: Bytes,
+}
+
+impl MessageEncapsulationExtensionData {
+
+    pub fn encode(&self, dst: &mut BytesMut) {
+        panic!("MessageEncapsulationExtensionData::encode not implemented");
+    }
+
+    pub fn decode(src: &mut Bytes) -> MessageEncapsulationExtensionData {
+        let len: usize = src.get_u8().into();
+        let byte = src.get_u8();
+        let more = byte & 0x80 != 0;
+        let critical = byte & 0x40 != 0;
+        let type_: MessageEncapsulationExtensionType = FromPrimitive::from_u8(byte & 0x3f).unwrap();
+        let bytes = src.split_to(len - 2);
+
+        MessageEncapsulationExtensionData { more, critical, type_, bytes }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct MessageEncapsulationData {
     pub sequence_number : u8,
-    pub encrypted_extension : bool,
-    pub extension : bool,
-    pub extensions : Vec<Bytes>,
+    pub extensions : Vec<MessageEncapsulationExtensionData>,
+    pub encrypted_extensions : Vec<MessageEncapsulationExtensionData>,
+    pub ciphertext : Bytes,
 }
 
 impl MessageEncapsulationData {
 
     pub fn encode(&self, dst: &mut BytesMut) {
-
+        panic!("MessageEncapsulationData::encode not implemented");
     }
 
     pub fn decode(src: &mut Bytes) -> MessageEncapsulationData {
-        MessageEncapsulationData { sequence_number: 0, encrypted_extension: false, extension: false, extensions: vec![] }
+        let sequence_number = src.get_u8();
+        let byte = src.get_u8();
+        let has_encrypted_extension = byte & 0x2 != 0;
+        let has_extension = byte & 0x1 != 0;
+
+        let mut extensions = vec![];
+        if has_extension {
+            loop {
+                let extension = MessageEncapsulationExtensionData::decode(src);
+                let more = extension.more;
+                extensions.push(extension);
+                if !more {
+                    break;
+                }
+            }
+        }
+        let mut encrypted_extensions = vec![];
+        if has_encrypted_extension {
+            loop {
+                let extension = MessageEncapsulationExtensionData::decode(src);
+                let more = extension.more;
+                encrypted_extensions.push(extension);
+                if !more {
+                    break;
+                }
+            }
+        }
+
+        let ciphertext = src.split_to(src.len());
+
+        MessageEncapsulationData { sequence_number: sequence_number, extensions, encrypted_extensions, ciphertext }
     }
 }
 
@@ -161,8 +227,10 @@ impl NonceReportData {
             byte |= 0x1;
         }
         dst.put_u8(byte);
-        if let Some(bytes) = self.entropy_input {
-            dst.put(bytes);
+        if let Some(bytes) = &self.entropy_input {
+            for b in &*bytes {
+                dst.put_u8(*b);
+            }
         }
     }
 
@@ -189,6 +257,9 @@ pub enum Security2 {
     KexSet(KexData),
     KexFail(KexFailData),
     PublicKeyReport(PublicKeyReportData),
+    // NetworkKeyGet(NetworkKeyGetData),
+    // NetworkKeyReport(NetworkKeyReportData),
+    // NetworkKeyVerify(NetworkKeyVerifyData),
 }
 
 impl Security2 {
@@ -197,6 +268,14 @@ impl Security2 {
 
     pub fn encode(&self, dst: &mut BytesMut) {
         match self {
+            Security2::NonceGet(data) => {
+                dst.put_u8(Command::NonceGet.into());
+                data.encode(dst);
+            },
+            Security2::NonceReport(data) => {
+                dst.put_u8(Command::NonceReport.into());
+                data.encode(dst);
+            },
             Security2::KexGet => {
                 dst.put_u8(Command::KexGet.into());
             },
@@ -216,6 +295,10 @@ impl Security2 {
                 dst.put_u8(Command::PublicKeyReport.into());
                 data.encode(dst);
             },
+            Security2::MessageEncapsulation(data) => {
+                dst.put_u8(Command::MessageEncapsulation.into());
+                data.encode(dst);
+            },
             _ => panic!("Not supported {:?}", self)
         }
     }
@@ -223,6 +306,12 @@ impl Security2 {
     pub fn decode(src: &mut Bytes) -> Security2 {
         let command: Option<Command> = FromPrimitive::from_u8(src.get_u8());
         return match command {
+            Some(Command::NonceGet) => {
+                Security2::NonceGet(NonceGetData::decode(src))
+            },
+            Some(Command::NonceReport) => {
+                Security2::NonceReport(NonceReportData::decode(src))
+            },
             Some(Command::KexGet) => {
                 Security2::KexGet
             },
@@ -237,6 +326,9 @@ impl Security2 {
             },
             Some(Command::PublicKeyReport) => {
                 Security2::PublicKeyReport(PublicKeyReportData::decode(src))
+            },
+            Some(Command::MessageEncapsulation) => {
+                Security2::MessageEncapsulation(MessageEncapsulationData::decode(src))
             },
             _ => panic!("Do not support {:?}", command)
         }
